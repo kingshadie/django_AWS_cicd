@@ -40,6 +40,7 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
           cd /var/www/django_app/django_AWS_cicd
+          git reset --hard HEAD  # Discard local changes
           git pull origin main
           source venv/bin/activate
           pip install -r requirements.txt
