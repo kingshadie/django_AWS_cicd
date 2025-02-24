@@ -39,7 +39,7 @@ jobs:
         username: ubuntu
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /var/www/django_app/django_AWS_cicd
+          cd /var/www/django_app
           git reset --hard HEAD  # Discard local changes
           git pull origin main
           source venv/bin/activate
