@@ -66,3 +66,7 @@ python manage.py runserver
 ```bash
 pytest
 ```
+
+## What i learned
+
+The git reset --hard HEAD before pulling was a deliberate choice, not an oversight. without it, any manual fix made directly on the EC2 box (which happens more than it should early on) would silently conflict with the next deploy. Enforcing that the server always matches what's in version control was the actual lesson. That config drift on a single always-on instance is a real operational risk even for a simple deploy, not just something you learn about at scale.
