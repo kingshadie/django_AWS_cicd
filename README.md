@@ -1,72 +1,370 @@
 # Django AWS CI/CD Pipeline
 
-A Django application with an automated CI/CD pipeline for AWS deployment via GitHub Actions.
+A Django application deployed to **Amazon EC2** through an automated **GitHub Actions CI/CD pipeline**.
 
-## What this demonstrates
+This project demonstrates automated testing, AWS deployment, Linux application operations, secure CI/CD configuration, and a repeatable application delivery workflow.
 
-- Automated testing and deployment pipeline for a Django application
-- GitHub Actions workflow triggering on push (build → test → deploy)
-- AWS deployment integration
-- Django project structure and configuration for cloud deployment
+## What This Project Demonstrates
 
-## Stack
+- Automated testing and deployment of a Django application
+- GitHub Actions CI/CD triggered by pushes to `main`
+- AWS EC2 application deployment
+- Direct SSH-based deployment to EC2
+- Gunicorn application serving with systemd process management
+- Automated Django migrations and static-file collection
+- Secure handling of deployment credentials with GitHub Actions Secrets
+- Configuration-drift control on a persistent EC2 host
 
-- **App:** Django / Python
-- **CI/CD:** GitHub Actions
-- **Cloud:** AWS EC2 (direct SSH deploy — no PaaS/container layer)
-- **App server:** Gunicorn, managed via systemd
-- **Testing:** pytest (see `pytest.ini`, `tests/`)
+## Architecture
 
-## Pipeline
-
-Two-stage pipeline: `test` must pass before `deploy` runs.
-
+```text
+Developer
+    │
+    ▼
+  GitHub
+    │
+    ▼
+GitHub Actions
+    │
+    ├── Test Job
+    │      ├── Checkout code
+    │      ├── Setup Python 3.12
+    │      ├── Install dependencies
+    │      └── Run pytest
+    │
+    ▼
+Deploy Job
+    │
+    ├── SSH into EC2
+    ├── Synchronize repository
+    ├── Install dependencies
+    ├── Run migrations
+    ├── Collect static files
+    └── Restart Gunicorn
+    │
+    ▼
+Amazon EC2
+    │
+    ├── Django
+    ├── Gunicorn
+    └── systemd
 ```
-Push to main → GitHub Actions:
 
-  test job:
-    1. Checkout code
-    2. Set up Python 3.12
-    3. Install dependencies (pip install -r requirements.txt)
-    4. Run test suite (pytest)
+## Technology Stack
 
-  deploy job (runs only if test job succeeds):
-    5. SSH into EC2 instance (appleboy/ssh-action)
-    6. git pull origin main (hard reset first to discard local drift)
-    7. Activate virtualenv, reinstall dependencies
-    8. Run Django migrations (python manage.py migrate)
-    9. Collect static files (collectstatic --noinput)
-    10. Restart Gunicorn via systemctl
-```
-
-SSH host and private key are stored as encrypted GitHub Actions secrets (`HOST`, `SSH_PRIVATE_KEY`) — never committed to the repo.
-
-## Repository structure
-
-| Path | Purpose |
+| Area | Technology |
 |---|---|
-| `core/` | Django project settings |
-| `main/` | Application logic |
-| `templates/` | Django templates |
-| `tests/` | Test suite |
-| `.github/workflows/` | CI/CD pipeline definition |
+| Application | Django / Python |
+| Cloud | AWS |
+| Compute | Amazon EC2 |
+| CI/CD | GitHub Actions |
+| Application Server | Gunicorn |
+| Process Management | systemd |
+| Testing | pytest |
+| Deployment | SSH |
+| Package Management | pip |
+| Operating System | Linux |
 
-## Running locally
+## CI/CD Pipeline
+
+The pipeline uses a two-stage workflow:
+
+```text
+Push to main
+     │
+     ▼
+┌───────────────┐
+│   Test Job    │
+├───────────────┤
+│ Checkout      │
+│ Python 3.12   │
+│ Install deps  │
+│ Run pytest    │
+└───────┬───────┘
+        │
+     Tests pass
+        │
+        ▼
+┌───────────────┐
+│  Deploy Job   │
+├───────────────┤
+│ SSH to EC2    │
+│ Sync code     │
+│ Install deps  │
+│ Django migrate│
+│ Collect static│
+│ Restart Gunicorn
+└───────────────┘
+```
+
+The deployment stage runs only when the test stage succeeds.
+
+---
+
+# Deployment
+
+## Prerequisites
+
+Before using the deployment workflow, you need:
+
+- An AWS EC2 instance
+- SSH access to the instance
+- Python 3.12
+- Git
+- A Python virtual environment
+- Gunicorn
+- systemd service configuration
+- A GitHub repository containing the Django application
+- GitHub Actions enabled for the repository
+
+## GitHub Actions Secrets
+
+The deployment workflow uses encrypted GitHub Actions secrets for the EC2 connection:
+
+```text
+HOST
+SSH_PRIVATE_KEY
+```
+
+These credentials must **not** be committed to the repository. The current implementation stores the SSH host and private key as GitHub Actions secrets.
+
+## CI Test Steps
+
+The test job performs the following operations:
+
+### 1. Checkout the repository
+
+The GitHub Actions workflow checks out the application source code.
+
+### 2. Configure Python
+
+Python 3.12 is configured for the workflow.
+
+### 3. Install dependencies
 
 ```bash
-python -m venv venv
-source venv/bin/activate
 pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver
 ```
 
-## Running tests
+### 4. Run automated tests
 
 ```bash
 pytest
 ```
 
-## What i learned
+The deployment stage does not run unless the test stage succeeds.
 
-The git reset --hard HEAD before pulling was a deliberate choice, not an oversight. without it, any manual fix made directly on the EC2 box (which happens more than it should early on) would silently conflict with the next deploy. Enforcing that the server always matches what's in version control was the actual lesson. That config drift on a single always-on instance is a real operational risk even for a simple deploy, not just something you learn about at scale.
+## EC2 Deployment Steps
+
+After successful tests, GitHub Actions connects to the EC2 instance using SSH.
+
+### 1. Synchronize the repository
+
+The deployment workflow first restores the working tree to the version-controlled state:
+
+```bash
+git reset --hard HEAD
+git pull origin main
+```
+
+The `git reset --hard HEAD` step is deliberate. It ensures that the EC2 working tree returns to the version-controlled state before pulling the latest code, reducing the risk of local configuration drift interfering with deployment.
+
+### 2. Activate the virtual environment
+
+```bash
+source venv/bin/activate
+```
+
+### 3. Install application dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Apply Django database migrations
+
+```bash
+python manage.py migrate
+```
+
+### 5. Collect static files
+
+```bash
+python manage.py collectstatic --noinput
+```
+
+### 6. Restart Gunicorn
+
+```bash
+sudo systemctl restart gunicorn
+```
+
+These deployment operations are executed automatically by the GitHub Actions deployment job.
+
+---
+
+# Running Locally
+
+### 1. Create a virtual environment
+
+```bash
+python -m venv venv
+```
+
+### 2. Activate the virtual environment
+
+```bash
+source venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Apply migrations
+
+```bash
+python manage.py migrate
+```
+
+### 5. Start the Django development server
+
+```bash
+python manage.py runserver
+```
+
+The original project uses these local setup commands.
+
+---
+
+# Running Tests
+
+Run the test suite with:
+
+```bash
+pytest
+```
+
+The repository includes both `pytest.ini` and a dedicated `tests/` directory.
+
+---
+
+# Repository Structure
+
+```text
+.
+├── .github/
+│   └── workflows/
+├── core/
+├── main/
+├── djangoawsenv/
+├── templates/
+├── tests/
+├── .gitignore
+├── manage.py
+├── pytest.ini
+├── requirements.txt
+└── README.md
+```
+
+### Key Components
+
+**`.github/workflows/`**  
+Contains the CI/CD workflow.
+
+**`core/`**  
+Django project configuration and settings.
+
+**`main/`**  
+Application logic.
+
+**`templates/`**  
+Django templates.
+
+**`tests/`**  
+Automated test suite.
+
+**`manage.py`**  
+Django command-line interface.
+
+---
+
+# Deployment Design Decision: Configuration Drift
+
+One of the most important operational lessons from this project was managing configuration drift on a persistent EC2 instance.
+
+The deployment workflow intentionally runs:
+
+```bash
+git reset --hard HEAD
+```
+
+before:
+
+```bash
+git pull origin main
+```
+
+The purpose is to ensure that the EC2 working tree reflects the version-controlled application state before the next deployment.
+
+This was a deliberate operational decision rather than an incidental command. It addresses a common problem in manually modified, always-on application servers: changes made directly on the server can conflict with the next automated deployment.
+
+---
+
+# Engineering Lessons
+
+This project provided practical experience with:
+
+- AWS EC2 application hosting
+- CI/CD pipeline design
+- Automated testing gates
+- SSH-based deployment
+- Linux application operations
+- Gunicorn and systemd
+- Python/Django application deployment
+- Secure CI/CD secret management
+- Database migration automation
+- Static asset deployment
+- Configuration-drift control
+
+---
+
+# Future Improvements
+
+Potential improvements include:
+
+- Provisioning the EC2 infrastructure with Terraform
+- Introducing an AWS Application Load Balancer
+- Adding HTTPS and automated certificate management
+- Adding centralized logging
+- Adding Prometheus and Grafana monitoring
+- Implementing automated security and dependency scanning
+- Adding deployment rollback mechanisms
+- Implementing blue/green or rolling deployments
+- Migrating the database to Amazon RDS
+- Introducing containerized deployment with Docker
+- Migrating the application to Amazon ECS or Amazon EKS
+
+---
+
+# Key Takeaway
+
+This project demonstrates practical **AWS application deployment, CI/CD automation, automated testing, Linux operations, secure deployment configuration, and repeatable software delivery**.
+
+It represents the transition from managing application code alone toward managing the **complete application delivery lifecycle**:
+
+```text
+Code
+  ↓
+Test
+  ↓
+Deploy
+  ↓
+Operate
+  ↓
+Monitor
+```
+
+**Focus areas:** AWS • EC2 • Django • Python • GitHub Actions • CI/CD • Linux • Automation • Deployment Engineering
